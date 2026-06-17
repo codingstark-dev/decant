@@ -1,5 +1,5 @@
 {
-  "name": "@codingstark-dev/decant",
+  "name": "decant-cli",
   "version": "1.0.0",
   "description": "Mirror websites for AI. Extract HTML, CSS, JS, fonts, screenshots, and design tokens.",
   "keywords": ["web", "mirror", "design-tokens", "cli", "ai-agent", "headless", "crawler"],
