@@ -33,9 +33,16 @@ case "$ARCH" in
 esac
 
 # ── Fetch latest version from GitHub ──────────────────────────────────────────
-VERSION="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
-  | grep '"tag_name"' \
-  | sed -E 's/.*"v?([^"]+)".*/\1/')"
+# Resolve via HTTP redirect location first (bypasses GitHub API rate limits)
+REDIRECT_URL="$(curl -fsSL -I -o /dev/null -w "%{url_effective}" "https://github.com/$REPO/releases/latest" 2>/dev/null)"
+if echo "$REDIRECT_URL" | grep -q "/tag/"; then
+  VERSION="$(echo "$REDIRECT_URL" | sed -E 's|.*/tag/v?([^/]+).*|\1|')"
+else
+  # Fallback to API if redirect method didn't yield a tag (e.g. no release page exists yet)
+  VERSION="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null \
+    | grep '"tag_name"' \
+    | sed -E 's/.*"v?([^"]+)".*/\1/')"
+fi
 
 if [ -z "$VERSION" ]; then
   echo "✗ Could not determine latest version — check your connection"
