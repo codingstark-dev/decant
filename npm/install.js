@@ -111,7 +111,7 @@ if (!resolved) {
     resolved = binPath;
   } catch (err) {
     console.error(`\n  ✗ Could not install decant binary: ${err.message}`);
-    console.error(`  Try: cargo install decant-cli\n`);
+    console.error(`  Try: cargo install decant\n`);
     process.exit(1);
   }
 }

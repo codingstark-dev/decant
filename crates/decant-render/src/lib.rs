@@ -2,7 +2,7 @@
 //!
 //! When compiled **without** the `render` feature this crate is an empty stub —
 //! it exports a `RenderError` type and a placeholder `not_available()` function
-//! so that `decant-cli` can reference it unconditionally and gate at runtime.
+//! so that the main `decant` crate can reference it unconditionally and gate at runtime.
 //!
 //! Enable the `render` Cargo feature to pull in `chromiumoxide` and the real impl:
 //! ```sh

@@ -53,10 +53,10 @@ When used with `--render chrome`, decant also captures **multi-viewport screensh
 
 ```bash
 # Static crawl only (no browser dependency — fastest install)
-cargo install decant-cli
+cargo install decant
 
 # With headless-browser support (Chrome + Lightpanda)
-cargo install decant-cli --features render
+cargo install decant --features render
 ```
 
 After install, `decant` is on your `$PATH` immediately.
@@ -392,7 +392,7 @@ Both backends speak the same Chrome DevTools Protocol (CDP) WebSocket. When `--r
 ## Architecture
 
 ```
-decant-cli          CLI binary — argument parsing, orchestration, TUI
+decant              CLI binary — argument parsing, orchestration, TUI
   ├── decant-core   Fetch engine, URL frontier, rate limiter, robots.txt, file writer
   ├── decant-extract HTML/CSS/JS parsing, link rewriting, design-token & manifest extraction
   ├── decant-render  Headless browser backends (Chrome + Lightpanda via CDP) [feature-gated]

@@ -1,6 +1,6 @@
 //! Manifest builder — page tree, component regions, and asset catalog.
 //!
-//! After the crawl completes, `decant-cli` calls [`ManifestBuilder`] to
+//! After the crawl completes, `decant` calls [`ManifestBuilder`] to
 //! assemble the final `manifest.json` from data accumulated during the crawl.
 
 use chrono::{DateTime, Utc};

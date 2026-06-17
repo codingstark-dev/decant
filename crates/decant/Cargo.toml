@@ -1,5 +1,5 @@
 [package]
-name        = "decant-cli"
+name        = "decant"
 description = "CLI binary for decant — mirrors websites and extracts design systems for AI agents"
 version.workspace      = true
 edition.workspace      = true

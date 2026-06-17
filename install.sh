@@ -17,7 +17,7 @@ case "$OS" in
   Darwin*) OS_NAME="apple-darwin" ;;
   *)
     echo "✗ Unsupported OS: $OS"
-    echo "  Install manually: cargo install decant-cli"
+    echo "  Install manually: cargo install decant"
     exit 1
     ;;
 esac
@@ -27,7 +27,7 @@ case "$ARCH" in
   arm64|aarch64) ARCH_NAME="aarch64" ;;
   *)
     echo "✗ Unsupported architecture: $ARCH"
-    echo "  Install manually: cargo install decant-cli"
+    echo "  Install manually: cargo install decant"
     exit 1
     ;;
 esac

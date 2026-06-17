@@ -4,7 +4,7 @@ members = [
     "crates/decant-extract",
     "crates/decant-render",
     "crates/decant-tui",
-    "crates/decant-cli",
+    "crates/decant",
 ]
 resolver = "2"
 
@@ -108,7 +108,7 @@ mime_guess = "2"
 
 # Error handling
 # thiserror  — typed errors in library crates (decant-core, extract, render, tui)
-# color-eyre — rich human-facing errors in the decant-cli binary
+# color-eyre — rich human-facing errors in the decant binary
 thiserror  = "2"
 color-eyre = "0.6"
 
