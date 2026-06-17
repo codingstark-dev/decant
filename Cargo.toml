@@ -62,6 +62,12 @@ doc_markdown            = "allow"
 
 # ── Workspace-wide dependencies ───────────────────────────────────────────────
 [workspace.dependencies]
+# Local workspace crates
+decant-core    = { path = "crates/decant-core", version = "1.0.0" }
+decant-extract = { path = "crates/decant-extract", version = "1.0.0" }
+decant-render  = { path = "crates/decant-render", version = "1.0.0" }
+decant-tui     = { path = "crates/decant-tui", version = "1.0.0" }
+
 # Async runtime
 tokio      = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["io", "codec"] }

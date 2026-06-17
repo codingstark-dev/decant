@@ -21,10 +21,10 @@ default = []
 render = ["decant-render/render"]
 
 [dependencies]
-decant-core    = { path = "../decant-core" }
-decant-extract = { path = "../decant-extract" }
-decant-render  = { path = "../decant-render" }
-decant-tui     = { path = "../decant-tui" }
+decant-core    = { workspace = true }
+decant-extract = { workspace = true }
+decant-render  = { workspace = true }
+decant-tui     = { workspace = true }
 
 clap               = { workspace = true }
 tokio              = { workspace = true }
