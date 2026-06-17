@@ -13,6 +13,21 @@ use std::path::PathBuf;
              design system (design-tokens.json, manifest.json, context.md) \
              so AI agents can faithfully reproduce the UI.",
     long_about = None,
+    after_help = r#"EXAMPLES:
+  # Clone a website statically (fastest)
+  decant clone https://example.com --output ./example
+
+  # Clone with headless-browser rendering (Chrome)
+  decant clone https://example.com --render chrome
+
+  # Serve a cloned site for local preview
+  decant serve ./example --port 8080
+
+  # Serve with script-stripping (prevents client-side hydration crashes)
+  decant serve ./example --noscript
+
+  # Extract design tokens from an existing directory
+  decant tokens ./example"#,
 )]
 pub struct Cli {
     #[command(subcommand)]
