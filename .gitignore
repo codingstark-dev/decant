@@ -1,0 +1,44 @@
+# ── Rust build output ─────────────────────────────────────────────────────────
+/target/
+
+# ── macOS ─────────────────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+
+# ── Editor / IDE ──────────────────────────────────────────────────────────────
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*~
+
+# ── Environment / secrets ─────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Logs and temp files ───────────────────────────────────────────────────────
+*.log
+*.tmp
+*.bak
+
+
+*.com/
+*.io/
+*.dev/
+*.net/
+*.org/
+
+# ── Benchmark / test output directories ───────────────────────────────────────
+bench_*/
+test_*/
+target/*_test*/
+target/multigres_test*/
+target/bench_*/
+
+
+# ── Agent / skill internal files (not for end users) ──────────────────────────
+.agents/
+skills-lock.json
+build/

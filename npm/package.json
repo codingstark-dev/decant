@@ -1,0 +1,36 @@
+{
+  "name": "decant",
+  "version": "1.0.0",
+  "description": "Mirror websites for AI. Extract HTML, CSS, JS, fonts, screenshots, and design tokens.",
+  "keywords": ["web", "mirror", "design-tokens", "cli", "ai-agent", "headless", "crawler"],
+  "homepage": "https://github.com/codingstark-dev/decant",
+  "bugs": "https://github.com/codingstark-dev/decant/issues",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/codingstark-dev/decant.git"
+  },
+  "license": "MIT",
+  "author": "codingstark-dev",
+  "bin": {
+    "decant": "./bin/decant.js"
+  },
+  "scripts": {
+    "postinstall": "node install.js"
+  },
+  "optionalDependencies": {
+    "decant-darwin-arm64": "1.0.0",
+    "decant-darwin-x64":   "1.0.0",
+    "decant-linux-x64":    "1.0.0",
+    "decant-linux-arm64":  "1.0.0",
+    "decant-win32-x64":    "1.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "bin/",
+    "install.js",
+    "README.md",
+    "LICENSE"
+  ]
+}

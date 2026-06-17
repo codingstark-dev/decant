@@ -1,0 +1,34 @@
+[package]
+name        = "decant-core"
+description = "Fetch engine, URL frontier, rate limiter, robots.txt, and file writer for decant"
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+authors.workspace      = true
+license.workspace      = true
+repository.workspace   = true
+
+[lints]
+workspace = true
+
+[dependencies]
+tokio      = { workspace = true }
+tokio-util = { workspace = true }
+futures    = { workspace = true }
+reqwest    = { workspace = true }
+url        = { workspace = true }
+robotstxt  = { workspace = true }
+governor   = { workspace = true }
+sha2       = { workspace = true }
+hex        = { workspace = true }
+serde      = { workspace = true }
+serde_json = { workspace = true }
+chrono     = { workspace = true }
+mime_guess = { workspace = true }
+thiserror  = { workspace = true }
+tracing    = { workspace = true }
+percent-encoding = { workspace = true }
+
+[dev-dependencies]
+tokio  = { workspace = true }
+rstest = { workspace = true }

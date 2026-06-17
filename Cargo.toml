@@ -1,0 +1,141 @@
+[workspace]
+members = [
+    "crates/decant-core",
+    "crates/decant-extract",
+    "crates/decant-render",
+    "crates/decant-tui",
+    "crates/decant-cli",
+]
+resolver = "2"
+
+# ── Workspace-wide package metadata ──────────────────────────────────────────
+[workspace.package]
+edition      = "2024"
+rust-version = "1.88"          # ratatui 0.30.1 MSRV — Rust 1.88 stable (June 2026)
+version      = "1.0.0"
+authors      = ["decant contributors"]
+description  = "Mirror a website's HTML/CSS/JS/assets and extract a machine-readable design system for AI agents."
+license      = "MIT"
+repository   = "https://github.com/codingstark-dev/decant"
+homepage     = "https://github.com/codingstark-dev/decant"
+documentation= "https://docs.rs/decant"
+keywords     = ["web", "mirror", "design-tokens", "cli", "ai-agent"]
+categories   = ["command-line-utilities", "web-programming"]
+
+# ── Workspace-wide lint configuration ─────────────────────────────────────────
+# Library crates inherit this via [lints] workspace = true
+[workspace.lints.rust]
+missing_docs    = "warn"
+unsafe_code     = "forbid"
+
+[workspace.lints.clippy]
+all      = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+# Allow these pedantic lints workspace-wide — they produce more noise than value
+module_name_repetitions = "allow"
+must_use_candidate      = "allow"
+missing_errors_doc      = "allow"
+missing_panics_doc      = "allow"
+ignored_unit_patterns   = "allow"
+collapsible_if          = "allow"
+case_sensitive_file_extension_comparisons = "allow"
+single_char_pattern     = "allow"
+stable_sort_primitive   = "allow"
+uninlined_format_args   = "allow"
+format_push_string      = "allow"
+manual_range_contains   = "allow"
+useless_conversion      = "allow"
+cast_precision_loss     = "allow"
+needless_raw_string_hashes = "allow"
+implicit_clone          = "allow"
+used_underscore_binding = "allow"
+redundant_closure_for_method_calls = "allow"
+duration_suboptimal_units = "allow"
+cast_lossless           = "allow"
+large_enum_variant      = "allow"
+struct_excessive_bools  = "allow"
+too_many_lines          = "allow"
+if_not_else             = "allow"
+ignore_without_reason   = "allow"
+unnecessary_to_owned    = "allow"
+doc_markdown            = "allow"
+
+# ── Workspace-wide dependencies ───────────────────────────────────────────────
+[workspace.dependencies]
+# Async runtime
+tokio      = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["io", "codec"] }
+futures    = "0.3"
+
+# HTTP
+reqwest = { version = "0.12", default-features = false, features = [
+    "rustls-tls", "gzip", "brotli", "stream", "json",
+] }
+
+# HTML / CSS parsing
+scraper      = "0.21"
+# lightningcss hasn't reached 1.0 stable — pin to latest alpha explicitly.
+lightningcss = { version = "1.0.0-alpha.71", features = ["serde"] }
+
+# URL handling
+url = { version = "2", features = ["serde"] }
+
+# robots.txt
+robotstxt = "0.3"
+
+# Rate limiting
+governor = "0.10"
+
+# Hashing
+sha2 = "0.10"
+hex  = "0.4"
+
+# Serialization
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Date/time
+chrono = { version = "0.4", features = ["serde"] }
+
+# MIME types
+mime_guess = "2"
+
+# Error handling
+# thiserror  — typed errors in library crates (decant-core, extract, render, tui)
+# color-eyre — rich human-facing errors in the decant-cli binary
+thiserror  = "2"
+color-eyre = "0.6"
+
+# Logging / tracing
+tracing            = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+# TUI — ratatui 0.30.1 (latest stable 2026-06-05, MSRV 1.88, edition 2024)
+# 0.30.1 adds Block::shadow(), fixes Flex::SpaceEvenly semantics.
+# Breaking vs 0.29: block::Title removed, Alignment → HorizontalAlignment.
+ratatui   = { version = "0.30.1", features = ["crossterm"] }
+crossterm = { version = "0.29",   features = ["event-stream"] }
+indicatif = "0.17"
+
+# TTY detection
+atty = "0.2"
+
+# CLI
+clap = { version = "4", features = ["derive", "env", "wrap_help"] }
+
+# Headless Chrome SPA rendering — declared optional per-crate (decant-render),
+# not here: workspace deps cannot carry optional = true.
+chromiumoxide = "0.7"
+
+# Dev / test dependencies
+rstest  = "0.22"
+proptest = "1"
+percent-encoding = "2"
+
+
+# Release profile — fast+small production binary
+[profile.release]
+lto           = true
+codegen-units = 1
+panic         = "abort"
+strip         = true
