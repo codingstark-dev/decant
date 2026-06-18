@@ -100,6 +100,50 @@ export PATH="$PWD/target/release:$PATH"
 
 ---
 
+## 🤖 AI Agent Skill
+
+decant ships a **`SKILL.md`** that teaches any AI coding agent (Claude, Gemini, GPT, etc.)
+exactly how to use decant — all commands, options, workflows, and output formats — without
+any prior knowledge.
+
+### Option A — One-line install via `npx skills`
+
+```bash
+# Install globally (works in any project)
+npx skills add codingstark-dev/decant -g
+
+# Or install locally in the current project only
+npx skills add codingstark-dev/decant
+```
+
+After installation, your AI agent will automatically understand:
+- How to clone websites statically or with a headless browser
+- How to crawl multiple pages at different depths
+- How to pass cookies / auth headers for authenticated captures
+- How to serve and preview captured sites locally
+- How to extract and read `design-tokens.json`, `manifest.json`, and `context.md`
+
+### Option B — Download manually
+
+```bash
+# Download SKILL.md into your current project
+curl -fsSL https://raw.githubusercontent.com/codingstark-dev/decant/main/SKILL.md \
+  -o SKILL.md
+```
+
+Then reference it in your agent's context or system prompt.
+
+### Option C — Read directly in your AI prompt
+
+Paste this URL into Claude, Gemini, or ChatGPT to give your AI agent instant decant knowledge:
+
+```
+https://raw.githubusercontent.com/codingstark-dev/decant/main/SKILL.md
+```
+
+
+---
+
 ## Quick Start
 
 ### 1. Static clone (fast, no browser)
