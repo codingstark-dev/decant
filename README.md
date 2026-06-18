@@ -102,47 +102,41 @@ export PATH="$PWD/target/release:$PATH"
 
 ## 🤖 AI Agent Skill
 
-decant ships a **`SKILL.md`** that teaches any AI coding agent (Claude, Gemini, GPT, etc.)
-exactly how to use decant — all commands, options, workflows, and output formats — without
-any prior knowledge.
+decant ships a **`SKILL.md`** — a structured instruction file that teaches any AI coding assistant (Claude code, antigravity, codex, opencode, etc.) how to use decant autonomously, without you having to explain it.
 
-### Option A — One-line install via `npx skills`
+### Install the skill globally (all projects)
 
 ```bash
-# Install globally (works in any project)
-npx skills add codingstark-dev/decant -g
-
-# Or install locally in the current project only
-npx skills add codingstark-dev/decant
+# Using the skills CLI
+npx skills add codingstark-dev/decant --skill decant -g
 ```
 
-After installation, your AI agent will automatically understand:
-- How to clone websites statically or with a headless browser
-- How to crawl multiple pages at different depths
-- How to pass cookies / auth headers for authenticated captures
-- How to serve and preview captured sites locally
-- How to extract and read `design-tokens.json`, `manifest.json`, and `context.md`
+### Install manually
 
-### Option B — Download manually
+Copy [`SKILL.md`](https://raw.githubusercontent.com/codingstark-dev/decant/main/SKILL.md) into your project's `.agents/skills/decant/` directory:
 
 ```bash
-# Download SKILL.md into your current project
+mkdir -p .agents/skills/decant
 curl -fsSL https://raw.githubusercontent.com/codingstark-dev/decant/main/SKILL.md \
-  -o SKILL.md
+  -o .agents/skills/decant/SKILL.md
 ```
 
-Then reference it in your agent's context or system prompt.
+### What the skill teaches AI agents
 
-### Option C — Read directly in your AI prompt
+Once installed, your AI assistant will automatically know how to:
 
-Paste this URL into Claude, Gemini, or ChatGPT to give your AI agent instant decant knowledge:
-
-```
-https://raw.githubusercontent.com/codingstark-dev/decant/main/SKILL.md
-```
-
+| Task | Command it will use |
+|------|---------------------|
+| Clone a website statically | `decant clone <URL> --output ./site` |
+| Clone an SPA with Chrome | `decant clone <URL> --render chrome` |
+| Clone with authentication | `decant clone <URL> --cookies "session=abc"` |
+| Deep crawl multiple pages | `decant clone <URL> --depth 2` |
+| Extract design tokens | `decant tokens ./site` |
+| Serve a capture locally | `decant serve ./site --port 8080` |
+| Serve without JS (SPA fix) | `decant serve ./site --noscript` |
 
 ---
+
 
 ## Quick Start
 
