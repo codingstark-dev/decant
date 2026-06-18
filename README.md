@@ -65,10 +65,10 @@ After install, `decant` is on your `$PATH` immediately.
 
 ```bash
 # Install globally
-npm install -g decant-cli
+npm install -g @codingstark-dev/decant
 
 # Or run without installing (one-shot)
-npx decant-cli clone https://example.com --output ./capture
+npx @codingstark-dev/decant clone https://example.com --output ./capture
 ```
 
 ### Option 3 — curl (Linux / macOS)
