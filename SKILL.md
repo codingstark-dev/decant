@@ -39,6 +39,9 @@ containing all page assets plus three structured AI-friendly files:
 | `design-tokens.json` | Colors, typography, spacing, breakpoints, shadows |
 | `manifest.json` | Page tree, asset catalog, component regions |
 | `context.md` | Human+LLM readable site summary |
+| `repair-hints.json` | Clone health, failed asset categories, and AI repair actions |
+
+`decant verify` compares a live URL against a served local capture and writes `verify-report.json` plus live/local PNG screenshots for AI review.
 
 ## Installation
 
@@ -47,7 +50,7 @@ containing all page assets plus three structured AI-friendly files:
 cargo install decant --features render
 
 # Via npm
-npm install -g @codingstark-dev/decant
+npm install -g decant-cli
 
 # Via curl (macOS / Linux)
 curl -fsSL https://raw.githubusercontent.com/codingstark-dev/decant/main/install.sh | sh
@@ -58,6 +61,7 @@ curl -fsSL https://raw.githubusercontent.com/codingstark-dev/decant/main/install
 ```
 decant clone <URL> [OPTIONS]    # Mirror a website
 decant serve <DIR> [OPTIONS]    # Serve a captured site locally
+decant verify <LIVE> <LOCAL>    # Compare live/local screenshots
 decant tokens <DIR> [OPTIONS]   # Re-extract design tokens
 ```
 
@@ -93,6 +97,35 @@ For Single Page Applications (React, Vue, Next.js, etc.) that require JavaScript
 ```bash
 decant clone https://example.com --render chrome --output ./example
 ```
+
+Chrome runtime capture is enabled automatically in `auto` mode. It captures browser-observed static resources such as script-inserted modules, stylesheets, fonts, images, media, manifests, and `.mjs` chunks:
+
+```bash
+decant clone https://example.com \
+  --render chrome \
+  --runtime-capture on \
+  --output ./example
+```
+
+Runtime capture does not make live backend state, authenticated sessions, WebSocket/SSE streams, protected media, checkout flows, or server-personalized APIs fully offline-cloneable.
+
+After every clone, inspect `repair-hints.json`. If `status` is `needs_repair`, use its categorized issues before judging the capture:
+
+```bash
+jq . ./example/repair-hints.json
+```
+
+For visual work, serve the capture and run native verification at the same viewport:
+
+```bash
+decant serve ./example --port 8080 --noscript
+decant verify https://example.com http://127.0.0.1:8080 \
+  --viewports desktop \
+  --output ./example/verify-report.json \
+  --screenshots-dir ./example/verify-screenshots
+```
+
+If `verify-report.json` reports `needs_repair`, compare the generated live/local PNGs, repair according to `repair-hints.json`, then rerun `decant clone` and `decant verify`.
 
 ---
 
@@ -342,7 +375,7 @@ cat ./example/context.md
 ### Pattern 2: Clone SPA → Serve locally → Inspect
 ```bash
 # Clone with Chrome (required for JS-heavy SPAs)
-decant clone https://example.com --render chrome --output ./example
+decant clone https://example.com --render chrome --runtime-capture auto --output ./example
 
 # Serve locally for browser inspection
 decant serve ./example --port 8080

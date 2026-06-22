@@ -25,24 +25,27 @@
 | `context.md` | Token-budgeted LLM primer — paste this into your prompt first |
 | `design-tokens.json` | Full color palette, type scale, spacing, breakpoints, shadows |
 | `manifest.json` | Page tree, component regions, and asset catalog |
+| `repair-hints.json` | Clone health, failed asset categories, and AI repair actions |
 
-When used with `--render chrome`, decant also captures **multi-viewport screenshots** (mobile, tablet, desktop) so an AI agent has a visual ground truth to compare against.
+When used with `--render chrome`, decant also captures **browser-observed runtime resources** and **multi-viewport screenshots** (mobile, tablet, desktop) so an AI agent has a visual ground truth to compare against. `decant verify` then compares the live site and local preview screenshots and writes a machine-readable repair report.
 
 ---
 
 ## Features
 
 - **Static Mirroring** — extremely fast HTML/CSS/JS/asset crawl without a browser
-- **Headless Chrome** — full JavaScript rendering (`--render chrome`), cookie injection, multi-viewport screenshots
+- **Headless Chrome** — full JavaScript rendering (`--render chrome`), runtime network resource capture, cookie injection, multi-viewport screenshots
 - **Lightpanda** — ultra-fast (~11× faster, ~16× less RAM than Chrome) JS rendering (`--render lightpanda`) — no screenshots, pure DOM extraction
 - **Design Token Extraction** — colors, font families, spacing scale, breakpoints, radii, shadows from every stylesheet
-- **URL Rewriting** — all absolute and root-relative references rewritten to relative local paths for offline use
+- **URL Rewriting** — all absolute and root-relative references rewritten to relative local paths for offline use, with query-distinct assets saved separately
 - **JS Chunk Discovery** — scans compiled JS bundles to find and download dynamically-imported chunks (Vite, webpack, etc.)
 - **Cookie & Header Auth** — inline cookie string (`--cookies`) or Netscape cookie jar (`--cookie-file`) + custom request headers (`--header`)
 - **Selective Capture** — choose exactly which aspects to collect via `--capture html,css,js,fonts,screenshots,tokens,context`
 - **Multi-Viewport Screenshots** — `mobile` (390×844), `tablet` (768×1024), `desktop` (1440×900)
 - **TUI Dashboard** — real-time crawl progress with a ratatui terminal UI
 - **Offline Preview** — serve any capture directory locally with `decant serve`
+- **Visual Verification** — compare live/local screenshots with `decant verify`
+- **Repair Hints** — every clone writes `repair-hints.json` so agents know whether blocked, missing, malformed, or retryable assets need follow-up
 - **robots.txt** — respected by default; bypass with `--ignore-robots`
 
 ---
@@ -65,10 +68,10 @@ After install, `decant` is on your `$PATH` immediately.
 
 ```bash
 # Install globally
-npm install -g @codingstark-dev/decant
+npm install -g decant-cli
 
 # Or run without installing (one-shot)
-npx @codingstark-dev/decant clone https://example.com --output ./capture
+npx decant-cli clone https://example.com --output ./capture
 ```
 
 ### Option 3 — curl (Linux / macOS)
@@ -134,6 +137,8 @@ Once installed, your AI assistant will automatically know how to:
 | Extract design tokens | `decant tokens ./site` |
 | Serve a capture locally | `decant serve ./site --port 8080` |
 | Serve without JS (SPA fix) | `decant serve ./site --noscript` |
+| Compare live vs local | `decant verify <LIVE_URL> http://127.0.0.1:8080` |
+| Inspect repair guidance | `cat ./site/repair-hints.json` |
 
 ---
 
@@ -154,6 +159,35 @@ decant clone https://example.com \
   --screenshots mobile,tablet,desktop \
   --output ./example-chrome
 ```
+
+Runtime capture is `auto` for Chrome. Use `--runtime-capture on` when you want Decant to fail clearly unless Chrome runtime capture is available:
+
+```bash
+decant clone https://example.com \
+  --render chrome \
+  --runtime-capture on \
+  --output ./example-chrome
+```
+
+After the clone, check the native repair artifact:
+
+```bash
+jq . ./example-chrome/repair-hints.json
+```
+
+If `status` is `needs_repair`, use the listed issue categories before deciding the clone is visually wrong. For example, `malformed_css_url` means Decant's URL rewriting needs a parser fix; `blocked_asset` means rerun with cookies or headers; `third_party_optional` means compare screenshots before treating it as harmless.
+
+Serve and verify the capture:
+
+```bash
+decant serve ./example-chrome --port 8080 --noscript
+decant verify https://example.com http://127.0.0.1:8080 \
+  --viewports desktop \
+  --output ./example-chrome/verify-report.json \
+  --screenshots-dir ./example-chrome/verify-screenshots
+```
+
+`verify-report.json` contains `status: "match"` or `status: "needs_repair"`, per-viewport similarity scores, live/local screenshot paths, and AI next steps.
 
 ### 3. Lightpanda clone (lightweight JS, no screenshots)
 
@@ -214,7 +248,8 @@ decant serve ./example-capture --port 8080 --noscript
 │       └── ...
 ├── context.md               # AI-native LLM primer (start here)
 ├── design-tokens.json       # Full design system tokens
-└── manifest.json            # Page tree + asset catalog
+├── manifest.json            # Page tree + asset catalog
+└── repair-hints.json        # Clone health + AI repair actions
 ```
 
 <details>
@@ -312,9 +347,10 @@ Palette: `#0b0b0c` `#ffffff` `#000000` `#6366f1` `#e0e7ff`
 | `--output <DIR>` | `<hostname>` | Output directory |
 | `--depth <N>` | `0` | Link-follow recursion depth (0 = single page) |
 | `--render <chrome\|lightpanda>` | *(off)* | Enable JS rendering via headless browser |
+| `--runtime-capture <auto\|on\|off>` | `auto` | Capture browser-observed static resources when rendering with Chrome |
 | `--screenshots <VIEWPORTS>` | `mobile,tablet,desktop` | Comma list of viewports (requires `--render chrome`) |
 | `--no-screenshots` | false | Disable screenshots even with `--render chrome` |
-| `--capture <ASPECTS>` | `html,css,js,fonts,tokens,context` | Comma list: html, css, js, fonts, images, screenshots, tokens, context |
+| `--capture <ASPECTS>` | `html,css,js,fonts,images,tokens,context` | Comma list: html, css, js, fonts, images, screenshots, tokens, context |
 | `--cookies <STRING>` | — | Inline cookie: `"name=val; name2=val2"` |
 | `--cookie-file <PATH>` | — | Netscape cookie jar file path |
 | `--header <KEY:VALUE>` | — | Extra request header (repeatable) |
@@ -358,6 +394,8 @@ Re-run design-token extraction on an existing capture directory without re-downl
 | React/Vue SPAs with SSR/prerendering | ✅ Full support |
 | React/Vue client-only SPAs | ✅ Use `--render chrome` or `--render lightpanda` |
 | Sites behind session auth | ✅ Use `--cookies` or `--cookie-file` |
+| Browser-inserted JS/CSS/images/fonts/media | ✅ Use `--render chrome` with runtime capture |
+| Live backend state, WebSocket/SSE streams, DRM/protected media, bot-gated APIs | ⚠️ Not fully capturable as static offline files |
 | Multi-page sites | ✅ Use `--depth 2` or higher to follow links |
 | Sites with Cloudflare/bot protection | ⚠️ May get 403/429 — inject real session cookies |
 | React Native / Electron apps | ❌ Not applicable |
@@ -395,7 +433,7 @@ Chrome (headless)              26.5           1066    (1.2× slower)
   |---|---|
   | `static` (default) | Most sites — fastest, least RAM |
   | `--render lightpanda` | SPAs on Linux/Docker servers |
-  | `--render chrome` | SPAs + need screenshots |
+  | `--render chrome` | SPAs + browser-observed runtime assets + screenshots |
 
 ---
 
@@ -415,13 +453,16 @@ npx skills add codingstark-dev/decant
 |---|---|---|
 | Full JavaScript execution | ✅ | ✅ |
 | Screenshots | ✅ | ❌ |
+| Runtime network resource capture | ✅ | ❌ |
 | React / Vue / SPA HTML | ✅ | ✅ |
 | Cookie injection (CDP) | ✅ | ✅ |
 | Speed | Same (rate-limited) | Same (rate-limited) |
 | RAM usage | ~1 GB | ~18 MB |
 | Protocol | CDP WebSocket | CDP WebSocket |
 
-Both backends speak the same Chrome DevTools Protocol (CDP) WebSocket. When `--render chrome` is set, screenshots are captured automatically unless `--no-screenshots` is passed.
+Both backends speak the same Chrome DevTools Protocol (CDP) WebSocket. When `--render chrome` is set, runtime capture is enabled by default in `auto` mode and screenshots are captured automatically unless `--no-screenshots` is passed.
+
+Runtime capture is static-resource focused. It captures browser-observed scripts, stylesheets, images, fonts, media, manifests, and module chunks such as `.mjs`; it does not promise perfect cloning of authenticated sessions, live backend APIs, WebSocket/SSE updates, protected media, checkout flows, or server-personalized state.
 
 > **Note:** Lightpanda is in active development. On macOS arm64, some sites trigger a known CDP navigation hang — decant works around this with a 15-second per-page timeout that automatically falls back to static fetch.
 

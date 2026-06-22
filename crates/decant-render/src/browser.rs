@@ -5,7 +5,8 @@ use crate::error::RenderError;
 use chromiumoxide::{Browser as CBrowser, BrowserConfig};
 use futures::StreamExt;
 
-use std::time::Duration;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::process::Command;
 
 /// The unified browser instance.
@@ -13,6 +14,7 @@ pub struct Browser {
     inner: CBrowser,
     backend: BrowserBackend,
     _proc: Option<tokio::process::Child>,
+    profile_dir: Option<PathBuf>,
 }
 
 impl Browser {
@@ -29,33 +31,53 @@ impl Browser {
                         "Chrome binary not found on PATH or via CHROME_PATH".to_string(),
                     )
                 })?;
+                let _launch_lock = acquire_chrome_launch_lock().await?;
 
-                let config = BrowserConfig::builder()
-                    .chrome_executable(chrome_bin)
-                    .arg("--headless=new")
-                    .arg("--disable-gpu")
-                    .arg("--no-sandbox")
-                    .arg("--disable-setuid-sandbox")
-                    .build()
-                    .map_err(|e| RenderError::BrowserLaunch(e.to_string()))?;
+                let mut last_error = None;
+                for attempt in 0_u64..5 {
+                    let profile_dir = unique_chrome_profile_dir();
+                    std::fs::create_dir_all(&profile_dir)
+                        .map_err(|e| RenderError::BrowserLaunch(e.to_string()))?;
 
-                let (browser, mut handler) = CBrowser::launch(config)
-                    .await
-                    .map_err(|e| RenderError::BrowserLaunch(e.to_string()))?;
+                    let config = BrowserConfig::builder()
+                        .chrome_executable(chrome_bin.clone())
+                        .user_data_dir(&profile_dir)
+                        .arg("--headless=new")
+                        .arg("--disable-gpu")
+                        .arg("--no-sandbox")
+                        .arg("--disable-setuid-sandbox")
+                        .build()
+                        .map_err(|e| RenderError::BrowserLaunch(e.to_string()))?;
 
-                tokio::spawn(async move {
-                    while let Some(res) = handler.next().await {
-                        if let Err(e) = res {
-                            tracing::debug!("Chrome handler error: {:?}", e);
+                    match CBrowser::launch(config).await {
+                        Ok((browser, mut handler)) => {
+                            tokio::spawn(async move {
+                                while let Some(res) = handler.next().await {
+                                    if let Err(e) = res {
+                                        tracing::debug!("Chrome handler error: {:?}", e);
+                                    }
+                                }
+                            });
+
+                            return Ok(Self {
+                                inner: browser,
+                                backend,
+                                _proc: None,
+                                profile_dir: Some(profile_dir),
+                            });
+                        }
+                        Err(e) => {
+                            last_error = Some(e);
+                            let _ = std::fs::remove_dir_all(&profile_dir);
+                            tokio::time::sleep(Duration::from_millis(750 * (attempt + 1))).await;
                         }
                     }
-                });
+                }
 
-                Ok(Self {
-                    inner: browser,
-                    backend,
-                    _proc: None,
-                })
+                Err(RenderError::BrowserLaunch(last_error.map_or_else(
+                    || "Chrome launch failed".to_string(),
+                    |e| e.to_string(),
+                )))
             }
             BrowserBackend::Lightpanda => {
                 let lp_bin = BrowserBackend::resolve_lightpanda().ok_or_else(|| {
@@ -99,6 +121,7 @@ impl Browser {
                     inner: browser,
                     backend,
                     _proc: Some(child),
+                    profile_dir: None,
                 })
             }
         }
@@ -106,12 +129,20 @@ impl Browser {
 
     /// Shutdown the browser and cleanup associated resources.
     pub async fn shutdown(mut self) {
-        // Inner browser close
         let _ = self.inner.close().await;
+        if tokio::time::timeout(Duration::from_secs(5), self.inner.wait())
+            .await
+            .is_err()
+        {
+            let _ = self.inner.kill().await;
+        }
 
-        // If we spawned Lightpanda, kill the process
         if let Some(mut child) = self._proc.take() {
             let _ = child.kill().await;
+        }
+
+        if let Some(profile_dir) = self.profile_dir.take() {
+            let _ = std::fs::remove_dir_all(profile_dir);
         }
     }
 
@@ -123,5 +154,55 @@ impl Browser {
     /// Get the backend type of this browser.
     pub fn backend(&self) -> BrowserBackend {
         self.backend
+    }
+}
+
+fn unique_chrome_profile_dir() -> PathBuf {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_nanos());
+    std::env::temp_dir().join(format!("decant-chrome-{}-{nanos}", std::process::id()))
+}
+
+struct ChromeLaunchLock {
+    path: PathBuf,
+}
+
+impl Drop for ChromeLaunchLock {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir(&self.path);
+    }
+}
+
+async fn acquire_chrome_launch_lock() -> Result<ChromeLaunchLock, RenderError> {
+    let path = std::env::temp_dir().join("decant-chrome-launch.lock");
+    for _ in 0..1_200 {
+        match std::fs::create_dir(&path) {
+            Ok(()) => return Ok(ChromeLaunchLock { path }),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                remove_stale_chrome_launch_lock(&path);
+                tokio::time::sleep(Duration::from_millis(250)).await;
+            }
+            Err(e) => return Err(RenderError::BrowserLaunch(e.to_string())),
+        }
+    }
+
+    Err(RenderError::BrowserLaunch(
+        "timed out waiting for Chrome launch lock".to_string(),
+    ))
+}
+
+fn remove_stale_chrome_launch_lock(path: &Path) {
+    let Ok(metadata) = std::fs::metadata(path) else {
+        return;
+    };
+    let Ok(modified) = metadata.modified() else {
+        return;
+    };
+    let Ok(age) = modified.elapsed() else {
+        return;
+    };
+    if age > Duration::from_secs(300) {
+        let _ = std::fs::remove_dir(path);
     }
 }

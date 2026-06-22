@@ -5,7 +5,7 @@
 //! across tokio tasks.
 
 use std::collections::{HashSet, VecDeque};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use url::Url;
 
 /// The kind of crawl target.
@@ -79,7 +79,7 @@ impl Frontier {
     /// Enqueue a crawl item if the URL has not been seen before.
     /// Returns `true` if the item was newly added.
     pub fn enqueue(&self, item: CrawlItem) -> bool {
-        let mut inner = self.0.lock().expect("frontier lock poisoned");
+        let mut inner = self.inner();
         let key = normalize_key(&item.url);
         if inner.seen.insert(key) {
             inner.pending.push_back(item);
@@ -91,7 +91,7 @@ impl Frontier {
 
     /// Pop the next pending crawl item and mark its URL as in-flight.
     pub fn pop(&self) -> Option<CrawlItem> {
-        let mut inner = self.0.lock().expect("frontier lock poisoned");
+        let mut inner = self.inner();
         let item = inner.pending.pop_front()?;
         inner.in_flight.insert(normalize_key(&item.url));
         Some(item)
@@ -99,7 +99,7 @@ impl Frontier {
 
     /// Mark a URL as successfully done.
     pub fn mark_done(&self, url: &Url) {
-        let mut inner = self.0.lock().expect("frontier lock poisoned");
+        let mut inner = self.inner();
         let key = normalize_key(url);
         inner.in_flight.remove(&key);
         inner.done.insert(key);
@@ -107,7 +107,7 @@ impl Frontier {
 
     /// Mark a URL as errored.
     pub fn mark_error(&self, url: &Url, msg: impl Into<String>) {
-        let mut inner = self.0.lock().expect("frontier lock poisoned");
+        let mut inner = self.inner();
         let key = normalize_key(url);
         inner.in_flight.remove(&key);
         inner.errors.push((key, msg.into()));
@@ -115,7 +115,7 @@ impl Frontier {
 
     /// Snapshot counts for the TUI / progress display.
     pub fn counts(&self) -> FrontierCounts {
-        let inner = self.0.lock().expect("frontier lock poisoned");
+        let inner = self.inner();
         FrontierCounts {
             pending: inner.pending.len(),
             in_flight: inner.in_flight.len(),
@@ -124,10 +124,22 @@ impl Frontier {
         }
     }
 
+    /// Snapshot the errored URLs and their messages.
+    pub fn errors(&self) -> Vec<(String, String)> {
+        let inner = self.inner();
+        inner.errors.clone()
+    }
+
     /// Returns `true` when there are no pending or in-flight URLs.
     pub fn is_complete(&self) -> bool {
-        let inner = self.0.lock().expect("frontier lock poisoned");
+        let inner = self.inner();
         inner.pending.is_empty() && inner.in_flight.is_empty()
+    }
+
+    fn inner(&self) -> MutexGuard<'_, Inner> {
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 }
 
@@ -207,6 +219,13 @@ mod tests {
         let counts = f.counts();
         assert_eq!(counts.in_flight, 0);
         assert_eq!(counts.errors, 1);
+        assert_eq!(
+            f.errors(),
+            vec![(
+                "https://example.com/".to_string(),
+                "connection refused".to_string()
+            )]
+        );
         assert!(f.is_complete());
     }
 

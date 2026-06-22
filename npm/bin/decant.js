@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * decant CLI shim — invoked when user runs `decant` after `npm install -g decant`
+ * decant CLI shim — invoked when user runs `decant` after `npm install -g decant-cli`
  * Reads the resolved binary path written by install.js and executes it.
  */
 
@@ -14,7 +14,7 @@ const manifestPath = path.join(__dirname, ".bin", "binary-path.json");
 
 if (!fs.existsSync(manifestPath)) {
   console.error(
-    "decant: binary not found — try reinstalling with `npm install -g decant`"
+    "decant: binary not found — try reinstalling with `npm install -g decant-cli`"
   );
   process.exit(1);
 }

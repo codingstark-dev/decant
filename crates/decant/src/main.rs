@@ -32,9 +32,9 @@ async fn main() -> Result<()> {
 
     // ── 2. Structured logging (honours RUST_LOG env var) ─────────────────────
     fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn")),
-        )
+        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+            EnvFilter::new("decant=warn,decant_core=warn,decant_extract=warn,decant_render=warn")
+        }))
         .with_target(false)
         .compact()
         .init();
@@ -46,5 +46,6 @@ async fn main() -> Result<()> {
         Commands::Clone(args) => commands::clone::run(args).await,
         Commands::Tokens(args) => commands::tokens::run(args).await,
         Commands::Serve(args) => commands::serve::run(args).await,
+        Commands::Verify(args) => commands::verify::run(args).await,
     }
 }

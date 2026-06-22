@@ -3,7 +3,7 @@
  * decant — npm package installer
  *
  * Resolves the correct platform-specific binary and creates a shim so that
- * `decant` works from the command line after `npm install -g decant`.
+ * `decant` works from the command line after `npm install -g decant-cli`.
  *
  * Binary resolution order:
  *   1. Platform optional dependency (decant-darwin-arm64, etc.)
@@ -12,11 +12,10 @@
 
 "use strict";
 
-const { execFileSync, spawnSync } = require("child_process");
+const { spawnSync } = require("child_process");
 const fs   = require("fs");
 const os   = require("os");
 const path = require("path");
-const https = require("https");
 
 const VERSION = require("./package.json").version;
 const REPO    = "codingstark-dev/decant";

@@ -1,5 +1,8 @@
 //! CSS parsing and design-token extraction using `lightningcss`.
 //!
+//! # noqa: SIZE_OK - CSS URL rewriting and token extraction share parser state;
+//! split only after a dedicated parser/rewrite fixture suite is in place.
+//!
 //! Given raw CSS bytes, this module parses the stylesheet and extracts:
 //! - Colors (hex, rgb, hsl, named)
 //! - Font families and size scale
@@ -161,8 +164,7 @@ where
 
         let content_start = url_start + 4; // after "url("
 
-        if let Some(paren_pos) = css[content_start..].find(')') {
-            let content_end = content_start + paren_pos;
+        if let Some(content_end) = find_url_function_end(&css, content_start) {
             let raw_val = &css[content_start..content_end];
 
             let trimmed = raw_val.trim();
@@ -213,85 +215,32 @@ where
     Ok((discovered_urls, rewritten))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use url::Url;
+fn find_url_function_end(css: &str, content_start: usize) -> Option<usize> {
+    let mut quote = None;
+    let mut escaped = false;
 
-    #[test]
-    fn test_extract_and_rewrite_css() {
-        let css = r#"
-            @font-face {
-                font-family: 'Geist';
-                src: url(/assets/geist.woff2) format('woff2');
-            }
-            body {
-                background-image: url('/img/bg.png');
-            }
-        "#;
-        let base = Url::parse("https://example.com/assets/app.css").unwrap();
-        let (urls, rewritten) = extract_and_rewrite_css(css.as_bytes(), &base, |url| {
-            if url.path().ends_with(".woff2") {
-                Some("geist.woff2".to_string())
-            } else if url.path().ends_with(".png") {
-                Some("../img/bg.png".to_string())
-            } else {
-                None
-            }
-        })
-        .unwrap();
+    for (offset, ch) in css[content_start..].char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
 
-        assert_eq!(urls.len(), 2);
-        assert!(urls.contains(&Url::parse("https://example.com/assets/geist.woff2").unwrap()));
-        assert!(urls.contains(&Url::parse("https://example.com/img/bg.png").unwrap()));
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
 
-        assert!(rewritten.contains("url(\"geist.woff2\")"));
-        assert!(rewritten.contains("url(\"../img/bg.png\")"));
+        match quote {
+            Some(q) if ch == q => quote = None,
+            None if ch == '"' || ch == '\'' => quote = Some(ch),
+            None if ch == ')' => return Some(content_start + offset),
+            Some(_) | None => {}
+        }
     }
 
-    #[test]
-    fn extracts_hex_colors() {
-        let css = "body { color: #fff; background: #001122; border: 1px solid #abc; }";
-        let tokens = extract_tokens(css.as_bytes()).unwrap();
-        assert!(tokens.colors.swatches.contains(&"#fff".to_string()));
-        assert!(tokens.colors.swatches.contains(&"#001122".to_string()));
-        assert!(tokens.colors.swatches.contains(&"#abc".to_string()));
-    }
-
-    #[test]
-    fn extracts_font_families() {
-        let css = "body {\n    font-family: 'Inter', sans-serif;\n}";
-        let tokens = extract_tokens(css.as_bytes()).unwrap();
-        assert!(!tokens.typography.font_families.is_empty());
-    }
-
-    #[test]
-    fn extracts_breakpoints() {
-        let css = "@media (min-width: 768px) { } @media (max-width: 1024px) { }";
-        let tokens = extract_tokens(css.as_bytes()).unwrap();
-        assert!(tokens.breakpoints.contains(&768));
-        assert!(tokens.breakpoints.contains(&1024));
-    }
-
-    #[test]
-    fn extract_rewrite_css_no_urls() {
-        // CSS with no url() references should pass through unchanged
-        let css = "body { color: red; font-size: 16px; }";
-        let base = Url::parse("https://example.com/style.css").unwrap();
-        let (urls, rewritten) = extract_and_rewrite_css(css.as_bytes(), &base, |_| None).unwrap();
-        assert!(urls.is_empty());
-        assert_eq!(rewritten, css);
-    }
-
-    #[test]
-    fn extract_rewrite_css_data_uri() {
-        // data: URIs should be left alone (not treated as asset references)
-        let css = r#"body { background: url("data:image/png;base64,abc=="); }"#;
-        let base = Url::parse("https://example.com/style.css").unwrap();
-        let (urls, _) = extract_and_rewrite_css(css.as_bytes(), &base, |_| None).unwrap();
-        assert!(
-            urls.is_empty(),
-            "data: URIs should not be collected as URLs"
-        );
-    }
+    None
 }
+
+#[cfg(test)]
+#[path = "css_tests.rs"]
+mod tests;

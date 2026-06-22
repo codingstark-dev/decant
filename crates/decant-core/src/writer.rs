@@ -5,8 +5,6 @@
 //! - `/about`           → `about/index.html`  (if no extension)
 //! - `/about.html`      → `about.html`
 //! - `/assets/app.css`  → `assets/app.css`
-//! - Query strings are stripped from the path (query-differentiated URLs become
-//!   separate files only if they differ in path).
 
 use std::path::{Path, PathBuf};
 
@@ -39,7 +37,7 @@ pub fn url_to_path(output_dir: &Path, url: &Url) -> PathBuf {
         }
     }
 
-    path
+    append_query_suffix(path, url.query())
 }
 
 /// Write bytes to `path`, creating all parent directories as needed.
@@ -79,6 +77,34 @@ pub fn percent_decode(s: &str) -> String {
     percent_encoding::percent_decode_str(s)
         .decode_utf8_lossy()
         .into_owned()
+}
+
+fn append_query_suffix(mut path: PathBuf, query: Option<&str>) -> PathBuf {
+    let Some(query) = query.filter(|value| !value.is_empty()) else {
+        return path;
+    };
+    let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+        return path;
+    };
+
+    let digest = hex::encode(Sha256::digest(query.as_bytes()));
+    let query_suffix = &digest[..16];
+    let file_path = Path::new(file_name);
+
+    let suffixed = match (
+        file_path.file_stem().and_then(|stem| stem.to_str()),
+        file_path
+            .extension()
+            .and_then(|extension| extension.to_str()),
+    ) {
+        (Some(stem), Some(extension)) if !stem.is_empty() => {
+            format!("{stem}.q-{query_suffix}.{extension}")
+        }
+        _ => format!("{file_name}.q-{query_suffix}"),
+    };
+
+    path.set_file_name(suffixed);
+    path
 }
 
 #[cfg(test)]
@@ -134,12 +160,53 @@ mod tests {
     }
 
     #[test]
-    fn query_string_is_stripped() {
-        // Query parameters should not appear in the file path (the url crate strips them).
+    fn query_string_gets_filesystem_safe_suffix() {
         let url = Url::parse("https://example.com/search?q=hello&page=2").unwrap();
         let path = url_to_path(Path::new("/out"), &url);
-        // Path segment is 'search' with no extension -> becomes 'search/index.html'
-        assert_eq!(path, Path::new("/out/search/index.html"));
+
+        assert!(path.starts_with(Path::new("/out/search")));
+        assert_ne!(path, Path::new("/out/search/index.html"));
+        let file_name = path.file_name().and_then(|name| name.to_str()).unwrap();
+        assert!(file_name.starts_with("index.q-"));
+        assert!(file_name.ends_with(".html"));
+        assert!(!file_name.contains('?'));
+        assert!(!file_name.contains('&'));
+        assert!(!file_name.contains('='));
+        assert!(!file_name.contains('#'));
+        assert!(!file_name.contains('/'));
+        assert!(!file_name.contains(std::path::MAIN_SEPARATOR));
+    }
+
+    #[test]
+    fn query_distinguished_assets_map_to_distinct_deterministic_paths() {
+        let first = Url::parse("https://example.com/assets/app.css?v=1").unwrap();
+        let first_again = Url::parse("https://example.com/assets/app.css?v=1#ignored").unwrap();
+        let second = Url::parse("https://example.com/assets/app.css?v=2").unwrap();
+
+        let first_path = url_to_path(Path::new("/out"), &first);
+        let first_again_path = url_to_path(Path::new("/out"), &first_again);
+        let second_path = url_to_path(Path::new("/out"), &second);
+
+        assert_eq!(first_path, first_again_path);
+        assert_ne!(first_path, second_path);
+        assert_eq!(first_path.parent(), Some(Path::new("/out/assets")));
+        assert_eq!(second_path.parent(), Some(Path::new("/out/assets")));
+        assert!(
+            first_path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(
+                    |file_name| file_name.starts_with("app.q-") && file_name.ends_with(".css")
+                )
+        );
+        assert!(
+            second_path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(
+                    |file_name| file_name.starts_with("app.q-") && file_name.ends_with(".css")
+                )
+        );
     }
 
     #[test]

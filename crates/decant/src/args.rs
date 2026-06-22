@@ -1,6 +1,6 @@
 //! CLI argument definitions — all `clap` derive structs live here.
 
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
 /// decant — mirror a website and extract its design system for AI agents.
@@ -42,6 +42,8 @@ pub enum Commands {
     Tokens(TokensArgs),
     /// Serve a captured site locally for preview.
     Serve(ServeArgs),
+    /// Compare live and local screenshots and write AI repair guidance.
+    Verify(VerifyArgs),
 }
 
 /// Arguments for `decant clone <URL>`.
@@ -62,6 +64,11 @@ pub struct CloneArgs {
     /// Requires the `render` Cargo feature: `cargo install decant --features render`.
     #[arg(long)]
     pub render: Option<String>,
+
+    /// Capture browser-observed runtime resources: auto, on, or off.
+    /// `auto` enables this only for `--render chrome`.
+    #[arg(long, value_enum, default_value_t = RuntimeCaptureMode::Auto)]
+    pub runtime_capture: RuntimeCaptureMode,
 
     /// Inline cookie string: "name=val; name2=val2".
     #[arg(long)]
@@ -101,10 +108,10 @@ pub struct CloneArgs {
     pub no_screenshots: bool,
 
     /// Comma-separated list of aspects to capture: html, css, js, fonts, images, screenshots, tokens, context.
-    /// Default: html,css,js,fonts,tokens,context
+    /// Default: html,css,js,fonts,images,tokens,context
     #[arg(
         long,
-        default_value = "html,css,js,fonts,tokens,context",
+        default_value = "html,css,js,fonts,images,tokens,context",
         value_delimiter = ','
     )]
     pub capture: Vec<String>,
@@ -132,6 +139,39 @@ pub struct CloneArgs {
     /// Override the default identifying User-Agent string.
     #[arg(long)]
     pub user_agent: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub enum RuntimeCaptureMode {
+    Auto,
+    On,
+    Off,
+}
+
+/// Arguments for `decant verify <LIVE_URL> <LOCAL_URL>`.
+#[derive(Args, Debug, Clone)]
+pub struct VerifyArgs {
+    /// Original live URL to compare against.
+    pub live_url: String,
+
+    /// Local preview URL, usually from `decant serve`.
+    pub local_url: String,
+
+    /// JSON report path.
+    #[arg(short, long, default_value = "verify-report.json")]
+    pub output: PathBuf,
+
+    /// Directory where live/local PNG screenshots are written.
+    #[arg(long, default_value = "verify-screenshots")]
+    pub screenshots_dir: PathBuf,
+
+    /// Viewports to compare (comma-separated: mobile, tablet, desktop).
+    #[arg(long, value_delimiter = ',', default_value = "desktop")]
+    pub viewports: Vec<String>,
+
+    /// Minimum similarity score from 0.0 to 1.0.
+    #[arg(long, default_value_t = 0.92)]
+    pub threshold: f32,
 }
 
 /// Arguments for `decant tokens <DIR>`.

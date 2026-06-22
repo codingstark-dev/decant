@@ -1,5 +1,8 @@
 //! `decant clone` — orchestrates the full website mirror pipeline.
 
+#[path = "clone_repair.rs"]
+mod repair;
+
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -30,7 +33,8 @@ use decant_tui::{
     state::AppState,
 };
 
-use crate::args::CloneArgs;
+use crate::args::{CloneArgs, RuntimeCaptureMode};
+use repair::{RepairHints, is_optional_missing_asset, page_manifest_url, relative_path};
 
 struct CaptureAspects {
     html: bool,
@@ -151,6 +155,22 @@ pub async fn run(args: CloneArgs) -> Result<()> {
         None
     };
 
+    let runtime_capture = match (args.runtime_capture, render_backend) {
+        (
+            RuntimeCaptureMode::On | RuntimeCaptureMode::Auto,
+            Some(decant_render::BrowserBackend::Chrome),
+        ) => true,
+        (RuntimeCaptureMode::On, _) => {
+            bail!("--runtime-capture on requires --render chrome")
+        }
+        (RuntimeCaptureMode::Auto | RuntimeCaptureMode::Off, _) => false,
+    };
+
+    println!(
+        "  runtime-capture={}",
+        if runtime_capture { "on" } else { "off" }
+    );
+
     #[cfg(not(feature = "render"))]
     let browser: Option<Arc<decant_render::Browser>> = {
         if render_backend.is_some() {
@@ -245,6 +265,7 @@ pub async fn run(args: CloneArgs) -> Result<()> {
     }));
 
     // ── Main crawl loop ───────────────────────────────────────────────────────
+    let mut tasks = Vec::new();
     loop {
         // Check completion before popping.
         if frontier.is_complete() {
@@ -266,8 +287,10 @@ pub async fn run(args: CloneArgs) -> Result<()> {
             continue;
         }
 
-        // Same-origin check.
-        if args.same_origin && url.host_str() != seed_url.host_str() {
+        if item.kind == TargetKind::Page
+            && args.same_origin
+            && url.host_str() != seed_url.host_str()
+        {
             frontier.mark_done(&url);
             continue;
         }
@@ -291,11 +314,18 @@ pub async fn run(args: CloneArgs) -> Result<()> {
         let browser = browser.clone();
         let cookies = cookies.clone();
         #[cfg(feature = "render")]
+        let runtime_capture_mode = args.runtime_capture;
+        #[cfg(feature = "render")]
+        let capture_runtime_resources = runtime_capture;
+        #[cfg(feature = "render")]
         let selected_viewports = selected_viewports.clone();
         let aspects = Arc::clone(&aspects);
 
-        tokio::spawn(async move {
-            let _permit = semaphore.acquire().await.expect("semaphore closed");
+        tasks.push(tokio::spawn(async move {
+            let Ok(_permit) = semaphore.acquire().await else {
+                frontier.mark_error(&url, "semaphore closed".to_string());
+                return;
+            };
 
             // robots.txt check.
             if !ignore_robots {
@@ -321,18 +351,56 @@ pub async fn run(args: CloneArgs) -> Result<()> {
             // Fetch / Render.
             let _ = &browser;
             let _ = &cookies;
-            #[allow(unused_mut)]
+            #[cfg(feature = "render")]
             let mut is_rendered = false;
+            #[cfg(not(feature = "render"))]
+            let is_rendered = false;
             let mut bytes = Vec::new();
             let mut content_type = String::new();
+            #[cfg(feature = "render")]
+            let mut observed_runtime_assets = Vec::new();
 
             #[cfg(feature = "render")]
             if let Some(ref b) = browser {
                 if item.kind == TargetKind::Page {
                     tracing::debug!("Rendering page via browser: {url}");
-                    match decant_render::render_html(b, &url, &cookies, 1000).await {
-                        Ok(html) => {
-                            bytes = html.into_bytes();
+                    match decant_render::render_page(
+                        b,
+                        &url,
+                        &cookies,
+                        1000,
+                        capture_runtime_resources,
+                    )
+                    .await
+                    {
+                        Ok(rendered) => {
+                            if capture_runtime_resources {
+                                for resource in rendered.observed_resources {
+                                    match Url::parse(&resource.url) {
+                                        Ok(asset_url) => observed_runtime_assets.push(asset_url),
+                                        Err(e) => tracing::debug!(
+                                            "Skipping invalid observed runtime URL `{}`: {e}",
+                                            resource.url
+                                        ),
+                                    }
+                                }
+                            }
+                            if runtime_capture_mode == RuntimeCaptureMode::On
+                                && !rendered.diagnostics.is_empty()
+                            {
+                                let message = rendered.diagnostics.join("; ");
+                                tracing::error!(
+                                    "Runtime capture required for {url}, but setup failed: {message}"
+                                );
+                                frontier.mark_error(&url, message);
+                                return;
+                            }
+                            for diagnostic in rendered.diagnostics {
+                                tracing::debug!(
+                                    "Runtime capture diagnostic for {url}: {diagnostic}"
+                                );
+                            }
+                            bytes = rendered.html.into_bytes();
                             content_type = "text/html; charset=utf-8".to_string();
                             is_rendered = true;
                         }
@@ -349,6 +417,11 @@ pub async fn run(args: CloneArgs) -> Result<()> {
                 let response = match decant_core::client::fetch(&client, &url).await {
                     Ok(r) => r,
                     Err(e) => {
+                        if is_optional_missing_asset(&url) {
+                            tracing::debug!("optional asset missing, skipping {url}: {e}");
+                            frontier.mark_done(&url);
+                            return;
+                        }
                         tracing::error!("fetch error {url}: {e}");
                         frontier.mark_error(&url, e.to_string());
                         return;
@@ -373,20 +446,25 @@ pub async fn run(args: CloneArgs) -> Result<()> {
             }
 
             let is_html = content_type.contains("html") || item.kind == TargetKind::Page;
-            let is_css = content_type.contains("css") || url.path().ends_with(".css");
-            let is_js = content_type.contains("javascript") || url.path().ends_with(".js");
+            let path_lower = url.path().to_ascii_lowercase();
+            let is_css = content_type.contains("css") || path_lower.ends_with(".css");
+            let is_js = content_type.contains("javascript")
+                || content_type.contains("ecmascript")
+                || path_lower.ends_with(".js")
+                || path_lower.ends_with(".mjs");
             let is_font = content_type.contains("font")
-                || url.path().ends_with(".woff2")
-                || url.path().ends_with(".ttf")
-                || url.path().ends_with(".otf")
-                || url.path().ends_with(".woff");
+                || path_lower.ends_with(".woff2")
+                || path_lower.ends_with(".ttf")
+                || path_lower.ends_with(".otf")
+                || path_lower.ends_with(".woff");
             let is_image = content_type.contains("image")
-                || url.path().ends_with(".png")
-                || url.path().ends_with(".jpg")
-                || url.path().ends_with(".jpeg")
-                || url.path().ends_with(".gif")
-                || url.path().ends_with(".svg")
-                || url.path().ends_with(".webp");
+                || path_lower.ends_with(".png")
+                || path_lower.ends_with(".jpg")
+                || path_lower.ends_with(".jpeg")
+                || path_lower.ends_with(".gif")
+                || path_lower.ends_with(".svg")
+                || path_lower.ends_with(".webp")
+                || path_lower.ends_with(".avif");
 
             // Filter by capture aspects.
             let should_save = if is_html {
@@ -442,6 +520,16 @@ pub async fn run(args: CloneArgs) -> Result<()> {
                             kind: TargetKind::Asset,
                             depth: 0,
                         });
+                    }
+                    #[cfg(feature = "render")]
+                    if capture_runtime_resources {
+                        for asset in &observed_runtime_assets {
+                            frontier.enqueue(CrawlItem {
+                                url: asset.clone(),
+                                kind: TargetKind::Asset,
+                                depth: 0,
+                            });
+                        }
                     }
                 }
 
@@ -502,7 +590,7 @@ pub async fn run(args: CloneArgs) -> Result<()> {
                     let regions = detect_regions(&bytes);
                     let title = decant_extract::html::extract_title(&bytes);
                     let page = PageEntry {
-                        url: url.path().to_string(),
+                        url: page_manifest_url(&url),
                         file: rel_path,
                         title,
                         description: None,
@@ -598,7 +686,7 @@ pub async fn run(args: CloneArgs) -> Result<()> {
             );
 
             frontier.mark_done(&url);
-        });
+        }));
 
         // Tick progress bar if not using TUI.
         if let Some(ref p) = progress {
@@ -611,6 +699,12 @@ pub async fn run(args: CloneArgs) -> Result<()> {
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         if let Some(ref p) = progress {
             p.tick();
+        }
+    }
+
+    for task in tasks {
+        if let Err(e) = task.await {
+            tracing::warn!("clone task failed to join: {e}");
         }
     }
 
@@ -659,6 +753,13 @@ pub async fn run(args: CloneArgs) -> Result<()> {
         }
     }
 
+    let counts = frontier.counts();
+    let repair_hints = RepairHints::new(&seed_url, counts.done, &frontier.errors());
+    let repair_hints_path = output_dir.join("repair-hints.json");
+    let repair_hints_json = serde_json::to_string_pretty(&repair_hints)?;
+    tokio::fs::write(&repair_hints_path, repair_hints_json).await?;
+    println!("✓  repair-hints.json written");
+
     app_state.finish();
 
     // Rejoin TUI thread.
@@ -666,7 +767,6 @@ pub async fn run(args: CloneArgs) -> Result<()> {
         handle.join().ok();
     }
 
-    let counts = frontier.counts();
     println!(
         "\n✓  Done. {} pages/assets captured, {} errors.",
         counts.done, counts.errors
@@ -675,64 +775,6 @@ pub async fn run(args: CloneArgs) -> Result<()> {
     Ok(())
 }
 
-/// Compute the relative path from `from_dir` to `to`.
-/// e.g. from `docs` to `assets/app.css` -> `../assets/app.css`
-fn relative_path(from_dir: &Path, to: &Path) -> PathBuf {
-    let from_comps: Vec<_> = from_dir.components().collect();
-    let to_comps: Vec<_> = to.components().collect();
-
-    let mut common_prefix_len = 0;
-    for (f, t) in from_comps.iter().zip(to_comps.iter()) {
-        if f == t {
-            common_prefix_len += 1;
-        } else {
-            break;
-        }
-    }
-
-    let mut result = PathBuf::new();
-    for _ in common_prefix_len..from_comps.len() {
-        result.push("..");
-    }
-    for comp in &to_comps[common_prefix_len..] {
-        result.push(comp);
-    }
-
-    result
-}
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_relative_path_flat_to_nested() {
-        let from = Path::new("");
-        let to = Path::new("assets/app.css");
-        assert_eq!(relative_path(from, to), PathBuf::from("assets/app.css"));
-    }
-
-    #[test]
-    fn test_relative_path_nested_to_sibling() {
-        let from = Path::new("about");
-        let to = Path::new("about/team/index.html");
-        assert_eq!(relative_path(from, to), PathBuf::from("team/index.html"));
-    }
-
-    #[test]
-    fn test_relative_path_nested_to_root_sibling() {
-        let from = Path::new("about/team");
-        let to = Path::new("assets/app.css");
-        assert_eq!(
-            relative_path(from, to),
-            PathBuf::from("../../assets/app.css")
-        );
-    }
-
-    #[test]
-    fn test_relative_path_same_directory() {
-        let from = Path::new("about");
-        let to = Path::new("about/index.html");
-        assert_eq!(relative_path(from, to), PathBuf::from("index.html"));
-    }
-}
+#[path = "clone_tests.rs"]
+mod tests;

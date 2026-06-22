@@ -42,3 +42,7 @@ target/bench_*/
 .agents/
 skills-lock.json
 build/
+
+
+decant-launch-video
+.omo

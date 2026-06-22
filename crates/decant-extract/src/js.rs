@@ -52,7 +52,9 @@ pub fn extract_js_dependencies(js_bytes: &[u8], base_url: &Url) -> Vec<Url> {
                 let content: String = path_chars.into_iter().collect();
                 let content_trimmed = content.trim();
 
-                if content_trimmed.ends_with(".js") {
+                if is_javascript_module_path(content_trimmed)
+                    && is_runtime_js_asset(content_trimmed, base_url)
+                {
                     // In ES modules, relative imports must start with ./, ../ or /
                     // Vite preloads can also use assets/ paths which contain /
                     let is_path_structure = content_trimmed.starts_with("./")
@@ -75,6 +77,14 @@ pub fn extract_js_dependencies(js_bytes: &[u8], base_url: &Url) -> Vec<Url> {
                             if content_trimmed.starts_with("assets/") {
                                 if let Ok(root) = base_url.join("/") {
                                     if let Ok(abs_url) = root.join(content_trimmed) {
+                                        resolved_url = Some(abs_url);
+                                    }
+                                }
+                            } else if content_trimmed.starts_with("static/")
+                                && base_url.path().contains("/_next/")
+                            {
+                                if let Ok(next_root) = base_url.join("/_next/") {
+                                    if let Ok(abs_url) = next_root.join(content_trimmed) {
                                         resolved_url = Some(abs_url);
                                     }
                                 }
@@ -102,6 +112,25 @@ pub fn extract_js_dependencies(js_bytes: &[u8], base_url: &Url) -> Vec<Url> {
     discovered.sort();
     discovered.dedup();
     discovered
+}
+
+fn is_javascript_module_path(path: &str) -> bool {
+    path.ends_with(".js") || path.ends_with(".mjs")
+}
+
+fn is_runtime_js_asset(path: &str, base_url: &Url) -> bool {
+    if path.starts_with("node_modules/") || path.contains("/node_modules/") {
+        return false;
+    }
+
+    if base_url
+        .host_str()
+        .is_some_and(|host| host.contains("googletagmanager.com"))
+    {
+        return false;
+    }
+
+    !path.contains("googletagmanager.com/gtm.js") && !path.contains("googletagmanager.com/gtag/js")
 }
 
 #[cfg(test)]
@@ -134,5 +163,54 @@ mod tests {
         );
         assert!(urls.contains(&Url::parse("https://example.com/chunks/other.js").unwrap()));
         assert!(urls.contains(&Url::parse("https://example.com/assets/root.js").unwrap()));
+    }
+
+    #[test]
+    fn next_static_chunk_paths_resolve_from_next_root() {
+        let js = r#"
+            self.__BUILD_MANIFEST = {
+                "/": ["static/chunks/0wvvvwsvs5j68.js", "static/chunks/0.4wbo1xxqsn..js"]
+            };
+        "#;
+        let base = Url::parse("https://www.mantri.dev/_next/static/chunks/app.js").unwrap();
+        let urls = extract_js_dependencies(js.as_bytes(), &base);
+
+        assert_eq!(urls.len(), 2);
+        assert!(urls.contains(
+            &Url::parse("https://www.mantri.dev/_next/static/chunks/0wvvvwsvs5j68.js").unwrap()
+        ));
+        assert!(urls.contains(
+            &Url::parse("https://www.mantri.dev/_next/static/chunks/0.4wbo1xxqsn..js").unwrap()
+        ));
+        assert!(
+            !urls
+                .iter()
+                .any(|url| url.path().contains("/_next/static/chunks/static/chunks/"))
+        );
+    }
+
+    #[test]
+    fn ignores_dev_package_and_analytics_js_references() {
+        let js = r#"
+            const package_source = "/node_modules/eventemitter3/index.js";
+            const package_nested = "/node_modules/hoist-non-react-statics/dist/hoist-non-react-statics.cjs.js";
+            const gtm = "https://www.googletagmanager.com/gtm.js";
+            const framer_chunk = "./PX9hIOIVM.BvUUs-6a.mjs";
+            const real_chunk = "./chunk-app.js";
+        "#;
+        let base = Url::parse("https://example.com/assets/app.js").unwrap();
+        let urls = extract_js_dependencies(js.as_bytes(), &base);
+
+        assert_eq!(
+            urls,
+            vec![
+                Url::parse("https://example.com/assets/PX9hIOIVM.BvUUs-6a.mjs").unwrap(),
+                Url::parse("https://example.com/assets/chunk-app.js").unwrap()
+            ]
+        );
+
+        let gtm_base = Url::parse("https://www.googletagmanager.com/gtm.js").unwrap();
+        let gtm_urls = extract_js_dependencies(br#""/local-helper.js""#, &gtm_base);
+        assert!(gtm_urls.is_empty());
     }
 }

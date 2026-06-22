@@ -82,8 +82,7 @@ async fn handle_request(
 
     if noscript && content_type == "text/html" {
         let html = String::from_utf8_lossy(&body);
-        let stripped = strip_script_tags(&html);
-        body = stripped.into_bytes();
+        body = prepare_noscript_preview(&html).into_bytes();
     }
 
     let response = format!(
@@ -138,6 +137,53 @@ pub fn strip_script_tags(html: &str) -> String {
     result
 }
 
+pub fn prepare_noscript_preview(html: &str) -> String {
+    remove_inline_opacity(&strip_script_tags(html))
+}
+
+fn remove_inline_opacity(html: &str) -> String {
+    let mut result = String::with_capacity(html.len());
+    let mut rest = html;
+
+    while let Some(style_start) = rest.find("style=\"") {
+        let (before_style, after_before) = rest.split_at(style_start);
+        result.push_str(before_style);
+
+        let after_prefix = &after_before["style=\"".len()..];
+        let Some(style_end) = after_prefix.find('"') else {
+            result.push_str(after_before);
+            return result;
+        };
+
+        let style_value = &after_prefix[..style_end];
+        let sanitized = remove_opacity_declarations(style_value);
+        if !sanitized.is_empty() {
+            result.push_str("style=\"");
+            result.push_str(&sanitized);
+            result.push('"');
+        }
+        rest = &after_prefix[style_end + 1..];
+    }
+
+    result.push_str(rest);
+    result
+}
+
+fn remove_opacity_declarations(style_value: &str) -> String {
+    style_value
+        .split(';')
+        .filter_map(|declaration| {
+            let trimmed = declaration.trim();
+            if trimmed.is_empty() || trimmed.to_ascii_lowercase().starts_with("opacity:") {
+                None
+            } else {
+                Some(trimmed)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -154,5 +200,16 @@ mod tests {
         let html = "<div><SCRIPT TYPE=\"module\" async src=\"b.js\">const x = 1;</SCRIPT></div>";
         let expected = "<div></div>";
         assert_eq!(strip_script_tags(html), expected);
+    }
+
+    #[test]
+    fn prepare_noscript_preview_reveals_webflow_animation_content() {
+        let html = "<section style=\"opacity: 0; transform: translate3d(0, 2px, 0);\" data-w-id=\"a\"><h2>Visible copy</h2><script>Webflow.require('ix2')</script></section>";
+        let prepared = prepare_noscript_preview(html);
+
+        assert!(prepared.contains("<h2>Visible copy</h2>"));
+        assert!(prepared.contains("transform: translate3d(0, 2px, 0)"));
+        assert!(!prepared.contains("<script>"));
+        assert!(!prepared.contains("opacity:"));
     }
 }

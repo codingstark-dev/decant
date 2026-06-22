@@ -18,6 +18,8 @@ pub mod browser;
 #[cfg(feature = "render")]
 pub mod page;
 #[cfg(feature = "render")]
+pub mod runtime;
+#[cfg(feature = "render")]
 pub mod screenshot;
 
 pub use error::RenderError;
@@ -27,7 +29,9 @@ pub use backend::BrowserBackend;
 #[cfg(feature = "render")]
 pub use browser::Browser;
 #[cfg(feature = "render")]
-pub use page::render_html;
+pub use page::{render_html, render_page};
+#[cfg(feature = "render")]
+pub use runtime::{ObservedResource, ObservedResourceKind, RenderedPage};
 #[cfg(feature = "render")]
 pub use screenshot::{DESKTOP, MOBILE, Screenshot, TABLET, Viewport, capture_viewports};
 

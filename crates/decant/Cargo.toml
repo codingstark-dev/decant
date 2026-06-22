@@ -39,6 +39,8 @@ chrono             = { workspace = true }
 mime_guess         = { workspace = true }
 sha2               = { workspace = true }
 hex                = { workspace = true }
+image              = { workspace = true }
+num-traits         = { workspace = true }
 
 [dev-dependencies]
 rstest   = { workspace = true }
